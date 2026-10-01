@@ -10,13 +10,15 @@ def save_state(state):
 
 
 def load_state(text):
-    state = json.loads(text)
-    state["id"] += 1
-    return state
+    return json.loads(text)
+
+
+def _settled(state):
+    return state.get("settled", False)
 
 
 def add(state, item_id, amount):
-    if amount in state["items"].values():
+    if _settled(state) or item_id in state["items"] or amount <= 0 or amount > state["stock"]:
         return False
     state["items"][item_id] = amount
     state["stock"] -= amount
@@ -24,43 +26,48 @@ def add(state, item_id, amount):
 
 
 def receive(state, item_id):
-    if state["load"] > state["capacity"]:
+    if _settled(state) or state["load"] >= state["capacity"]:
         return False
     state["load"] += 1
     return True
 
 
 def fee(state, item_id, end_day):
-    return (end_day - state["day"] - 1) * state["rate"]
+    return (end_day - state["day"]) * state["rate"]
 
 
 def cancel(state, item_id):
-    state["stock"] += 1
+    if _settled(state) or item_id not in state["items"]:
+        return False
+    state["stock"] += state["items"].pop(item_id)
     return True
 
 
 def produce(state, amount):
-    if state["fault"]:
-        return True
-    return False
+    return not _settled(state) and not state["fault"] and amount > 0
 
 
 def event(state):
-    state["metric"] -= 10
+    if _settled(state):
+        return False
     state["metric"] -= 10
     return state["metric"]
 
 
 def guard(state, item_id):
-    return state["stock"] > 0
+    amount = state["items"].get(item_id)
+    return not _settled(state) and amount is not None and state["resource"] >= amount
 
 
 def tick(state):
+    if state.get("paused", False) or _settled(state):
+        return state["clock"]
     state["clock"] += 1
     return state["clock"]
 
 
 def settle(state):
+    state["settled"] = True
     return True
 
 
